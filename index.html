@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control de aceite</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--tx:#1d1d1b;--mu:#6b6a65;--bd:#e2e0d9;--ac:#c2410c;--ok:#15803d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161614;--card:#211f1c;--tx:#efede6;--mu:#a09d93;--bd:#35332e;--ac:#fb923c;--ok:#4ade80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161614;--card:#211f1c;--tx:#efede6;--mu:#a09d93;--bd:#35332e;--ac:#fb923c;--ok:#4ade80;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 14px 40px}
+h1{font-size:22px;margin:0 0 2px}h2{font-size:15px;margin:0 0 10px}
+.sub{color:var(--mu);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.kpi b{display:block;font-size:24px;color:var(--ac)}.kpi span{color:var(--mu);font-size:12.5px}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end}
+label{font-size:12.5px;color:var(--mu);display:flex;flex-direction:column;gap:3px}
+input,select{font:inherit;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);width:100%}
+button{font:inherit;padding:9px 14px;border:0;border-radius:8px;background:var(--ac);color:#fff;cursor:pointer}
+button.g{background:transparent;color:var(--mu);border:1px solid var(--bd)}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap}
+th{color:var(--mu);font-weight:600;font-size:12.5px}td.n,th.n{text-align:right}
+.x{background:none;color:var(--mu);padding:2px 8px;border:0}
+.bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+.bar .l{width:130px;flex:none;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .t{flex:1;background:var(--bg);border-radius:6px;height:20px;overflow:hidden}
+.bar .f{height:100%;background:var(--ac);border-radius:6px}
+.bar .v{width:96px;flex:none;text-align:right}
+.note{color:var(--mu);font-size:12.5px;margin-top:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+</style>
+</head>
+<body>
+<main>
+<h1>Control de aceite</h1>
+<p class="sub">Registra cada revisión o relleno y calcula cuánto aceite gasta tu coche.</p>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="card">
+<h2>Nuevo registro</h2>
+<form id="f">
+<label>Fecha<input type="date" id="fecha"></label>
+<label>Kilometraje<input type="number" id="km" required min="0" placeholder="165606"></label>
+<label>Litros añadidos<input type="number" id="lt" step="0.1" min="0" value="0"></label>
+<label>Tipo<select id="tipo"><option value="control">Control / relleno</option><option value="cambio">Cambio de aceite</option></select></label>
+<label>Viaje / nota<input id="nota" placeholder="Sierra de Gredos"></label>
+<button>Añadir</button>
+</form>
+<p class="note">En un cambio de aceite pon los litros que lleva el motor (ej. 5); no cuentan como consumo. En un control sin relleno deja 0.</p>
+</div>
+
+<div class="card"><h2>Consumo por año (L / 1.000 km)</h2><div id="years"></div></div>
+<div class="card"><h2>Consumo por tramo (L / 1.000 km)</h2><div id="tramos"></div>
+<p class="note">Cada tramo va desde el registro anterior hasta ese. Así ves si pierde más con aceite recién cambiado o con más kilómetros encima.</p></div>
+
+<div class="card"><h2>Registros</h2><div class="tw"><table id="tb"></table></div>
+<div class="row"><button class="g" id="exp">Exportar copia</button><button class="g" id="imp">Importar copia</button><input type="file" id="file" accept=".json" hidden></div></div>
+</main>
+<script>
+var KEY="aceite-v1";
+var base=[
+{fecha:"2026-09-03",km:164012,lt:5,tipo:"cambio",nota:"Revisión anual"},
+{fecha:"",km:165000,lt:0,tipo:"control",nota:"Ciudad y autovía"},
+{fecha:"2026-10-13",km:165606,lt:0,tipo:"control",nota:"Sierra de Gredos"}];
+var data;
+try{var s=localStorage.getItem(KEY);data=s?JSON.parse(s):base.slice()}catch(e){data=base.slice()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
+var nf=new Intl.NumberFormat("es-ES",{maximumFractionDigits:2});
+function fmtD(d){if(!d)return "—";var p=d.split("-");return p[2]+"/"+p[1]+"/"+p[0]}
+
+function calc(){
+  var r=data.slice().sort(function(a,b){return a.km-b.km});
+  var tramos=[],lastCambio=null,lastYear=null;
+  r.forEach(function(x,i){
+    var y=x.fecha?x.fecha.slice(0,4):lastYear;if(x.fecha)lastYear=y;x._y=y;
+    if(x.tipo==="cambio"){lastCambio=x.km;x._t=null;return}
+    if(i===0){x._t=null;return}
+    var d=x.km-r[i-1].km;if(d<=0){x._t=null;return}
+    x._t={d:d,l:x.lt,rate:x.lt/d*1000,since:x.km-(lastCambio===null?r[0].km:lastCambio)};
+    tramos.push(x);
+  });
+  return {r:r,tramos:tramos};
+}
+
+function render(){
+  var c=calc(),r=c.r,t=c.tramos;
+  var L=0,D=0;t.forEach(function(x){L+=x._t.l;D+=x._t.d});
+  var avg=D?L/D*1000:0;
+  var ult=r.length?r[r.length-1].km:0;
+  var cam=null;r.forEach(function(x){if(x.tipo==="cambio")cam=x});
+  var sinceC=cam?ult-cam.km:null;
+  document.getElementById("kpis").innerHTML=
+   k(nf.format(avg),"L por 1.000 km (media)")+k(nf.format(L),"litros rellenados en total")+
+   k(nf.format(D),"km controlados")+
+   (sinceC!==null?k(nf.format(sinceC),"km desde el último cambio"):"")+
+   (cam?k(nf.format(Math.max(0,15000-sinceC)),"km hasta 15.000 del cambio"):"");
+
+  // por año
+  var ys={};t.forEach(function(x){var y=x._y||"s/f";ys[y]=ys[y]||{l:0,d:0};ys[y].l+=x._t.l;ys[y].d+=x._t.d});
+  var keys=Object.keys(ys).sort(),mx=0;
+  keys.forEach(function(y){ys[y].r=ys[y].l/ys[y].d*1000;if(ys[y].r>mx)mx=ys[y].r});
+  var h="";
+  keys.forEach(function(y,i){
+    var o=ys[y],w=mx?o.r/mx*100:0,ch="";
+    if(i>0){var p=ys[keys[i-1]].r;if(p>0){var pc=(o.r-p)/p*100;ch=' <span style="color:var(--'+(pc<=0?"ok":"ac")+')">'+(pc>0?"+":"")+nf.format(pc)+"%</span>"}}
+    h+='<div class="bar"><div class="l">'+y+'</div><div class="t"><div class="f" style="width:'+w+'%"></div></div><div class="v">'+nf.format(o.r)+ch+"</div></div>"+
+       '<div class="note" style="margin:-2px 0 6px 138px">'+nf.format(o.l)+" L en "+nf.format(o.d)+" km</div>";
+  });
+  document.getElementById("years").innerHTML=h||'<p class="note">Aún no hay tramos con datos.</p>';
+
+  // por tramo
+  var m2=0;t.forEach(function(x){if(x._t.rate>m2)m2=x._t.rate});
+  h="";
+  t.forEach(function(x){
+    h+='<div class="bar"><div class="l" title="'+esc(x.nota)+'">'+nf.format(x._t.since)+' km tras cambio</div><div class="t"><div class="f" style="width:'+(m2?x._t.rate/m2*100:0)+'%"></div></div><div class="v">'+nf.format(x._t.rate)+"</div></div>";
+  });
+  document.getElementById("tramos").innerHTML=h||'<p class="note">Aún no hay tramos.</p>';
+
+  // tabla
+  h="<tr><th>Fecha</th><th class='n'>Km</th><th class='n'>Litros</th><th>Tipo</th><th>Viaje / nota</th><th class='n'>L/1.000 km</th><th></th></tr>";
+  r.forEach(function(x){
+    h+="<tr><td>"+fmtD(x.fecha)+"</td><td class='n'>"+nf.format(x.km)+"</td><td class='n'>"+(x.lt?nf.format(x.lt)+" L":"NO")+"</td><td>"+(x.tipo==="cambio"?"Cambio":"Control")+"</td><td>"+esc(x.nota)+"</td><td class='n'>"+(x._t?nf.format(x._t.rate):"—")+"</td><td><button class='x' data-i='"+data.indexOf(x)+"' title='Borrar'>✕</button></td></tr>";
+  });
+  document.getElementById("tb").innerHTML=h;
+}
+function k(v,l){return '<div class="kpi"><b>'+v+"</b><span>"+l+"</span></div>"}
+function esc(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+
+document.getElementById("f").addEventListener("submit",function(e){
+  e.preventDefault();
+  data.push({fecha:document.getElementById("fecha").value,km:+document.getElementById("km").value,lt:+document.getElementById("lt").value||0,tipo:document.getElementById("tipo").value,nota:document.getElementById("nota").value});
+  save();this.reset();document.getElementById("lt").value=0;render();
+});
+document.getElementById("tb").addEventListener("click",function(e){
+  var i=e.target.getAttribute("data-i");
+  if(i!==null&&confirm("¿Borrar este registro?")){data.splice(+i,1);save();render()}
+});
+document.getElementById("exp").onclick=function(){
+  var a=document.createElement("a");a.href="data:application/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(data));a.download="aceite.json";a.click();
+};
+document.getElementById("imp").onclick=function(){document.getElementById("file").click()};
+document.getElementById("file").onchange=function(e){
+  var f=e.target.files[0];if(!f)return;var rd=new FileReader();
+  rd.onload=function(){try{var d=JSON.parse(rd.result);if(Array.isArray(d)){data=d;save();render()}}catch(x){alert("Archivo no válido")}};
+  rd.readAsText(f);
+};
+render();
+</script>
+</body>
+</html>
